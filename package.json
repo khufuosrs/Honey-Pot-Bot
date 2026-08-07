@@ -17,5 +17,10 @@
   "bugs": {
     "url": "https://github.com/khufuosrs/Honey-Pot-Bot/issues"
   },
-  "homepage": "https://github.com/khufuosrs/Honey-Pot-Bot#readme"
+  "homepage": "https://github.com/khufuosrs/Honey-Pot-Bot#readme",
+  "dependencies": {
+    "@wise-old-man/utils": "^4.0.22",
+    "discord.js": "^14.27.0",
+    "dotenv": "^17.4.2"
+  }
 }
