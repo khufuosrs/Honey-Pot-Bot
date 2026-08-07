@@ -25,6 +25,7 @@ const GROUP_ID = 25853;
 const GOLD_KEY_ROLE_ID = '1534942887765348473';
 const SILVER_KEY_ROLE_ID = '1535009097705853058';
 const MODERATOR_ROLE_ID = '1534942953640955949';
+const ENTRY_ROLE_ID = '1535176809195503667';
 
 // --- IN-MEMORY CONFIGURATION ---
 const guildConfigs = new Map();
@@ -118,7 +119,17 @@ client.on('interactionCreate', async interaction => {
 
     // 4. USER ACTION: Handle Button Click -> Open Modal
     if (interaction.isButton() && interaction.customId === 'open_verify_modal') {
-        logEvent('BUTTON_CLICKED', interaction.user, '-> Opened RSN Modal');
+        logEvent('BUTTON_CLICKED', interaction.user, '-> Clicked Verify Button');
+
+        // --- NEW SECURITY CHECK: REQUIRE ENTRY RANK ---
+        if (!interaction.member.roles.cache.has(ENTRY_ROLE_ID)) {
+            logEvent('VERIFY_DENIED', interaction.user, '-> User lacks the required Entry Rank to use the panel.');
+            return interaction.reply({ 
+                content: '⚠️ You do not have the required Entry rank to use this verification panel.', 
+                ephemeral: true 
+            });
+        }
+        // ----------------------------------------------
         
         const modal = new ModalBuilder()
             .setCustomId('rsn_modal')
@@ -172,7 +183,6 @@ client.on('interactionCreate', async interaction => {
                 logEvent('VERIFICATION_FAILED', interaction.user, `-> RSN "${rsn}" NOT found in group.`);
 
                 try {
-                    // Create private thread in the channel where verification was triggered
                     const thread = await interaction.channel.threads.create({
                         name: `verify-${interaction.user.username}`,
                         type: ChannelType.PrivateThread,
@@ -181,10 +191,8 @@ client.on('interactionCreate', async interaction => {
 
                     logEvent('THREAD_CREATED', interaction.user, `-> Private Thread Created: ${thread.name} (${thread.id})`);
 
-                    // Add the user to the thread
                     await thread.members.add(interaction.user.id);
 
-                    // Ping staff roles and the user inside the thread
                     const staffPings = `<@&${GOLD_KEY_ROLE_ID}> <@&${SILVER_KEY_ROLE_ID}> <@&${MODERATOR_ROLE_ID}>`;
                     await thread.send({
                         content: `Hello ${interaction.user}, your verification for RSN **${rsn}** was not found in the clan list on Wise Old Man.\n\n${staffPings} - Please assist with manually reviewing this verification.`
