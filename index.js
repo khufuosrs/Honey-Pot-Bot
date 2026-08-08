@@ -91,7 +91,7 @@ client.on('interactionCreate', async interaction => {
         const panelEmbed = new EmbedBuilder()
             .setTitle('__***Honey Trap***__ Clan Verification')
             .setDescription('Welcome to the server! To gain full access, you must link your Discord account to your Old School RuneScape account.\n\nClick the **Verify RSN** button below and type your exact in-game name.')
-            .setColor('#FFFF00')
+            .setColor('#F0B849')
             .setThumbnail('https://imgur.com/VHk74nK.jpg')
 			.setImage('https://imgur.com/msNAMI7.jpg');
 
