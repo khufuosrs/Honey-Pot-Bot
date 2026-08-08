@@ -107,7 +107,7 @@ client.on('interactionCreate', async interaction => {
     if (interaction.isChatInputCommand() && interaction.commandName === 'manual-verify') {
         logEvent('COMMAND_USED', interaction.user, '-> /manual-verify');
         if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+            return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: false });
         }
 
         await interaction.deferReply({ ephemeral: true });
