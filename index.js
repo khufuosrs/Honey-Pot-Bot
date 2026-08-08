@@ -267,8 +267,12 @@ client.on('interactionCreate', async interaction => {
     // MODAL SUBMIT HANDLER (WOM CHECK)
     // ==========================================
     if (interaction.isModalSubmit() && interaction.customId === 'rsn_modal') {
-        const rsn = interaction.fields.getTextInputValue('rsn_input').trim().toLowerCase();
-        logEvent('MODAL_SUBMITTED', interaction.user, `-> Entered RSN: "${rsn}"`);
+        
+        // Save the raw input for logging, and a lowercase version for searching
+        const userInputRsn = interaction.fields.getTextInputValue('rsn_input').trim();
+        const searchRsn = userInputRsn.toLowerCase();
+        
+        logEvent('MODAL_SUBMITTED', interaction.user, `-> Entered RSN: "${userInputRsn}"`);
         
         await interaction.deferReply({ ephemeral: true }); 
         const config = getConfig(interaction.guild.id);
@@ -281,10 +285,15 @@ client.on('interactionCreate', async interaction => {
         try {
             logEvent('API_REQUEST', interaction.user, `-> Querying Wise Old Man Group ID: ${GROUP_ID}`);
             const group = await womClient.groups.getGroupDetails(GROUP_ID);
-            const isMember = group.memberships.some(m => m.player.username.toLowerCase() === rsn);
+            
+            // NEW: Find the exact player object instead of just checking if they exist
+            const matchedMember = group.memberships.find(m => m.player.username.toLowerCase() === searchRsn);
 
-            if (isMember) {
-                logEvent('VERIFICATION_SUCCESS', interaction.user, `-> RSN "${rsn}" found in group!`);
+            if (matchedMember) {
+                // Pull the perfectly capitalized official name straight from Wise Old Man
+                const officialRsn = matchedMember.player.username;
+
+                logEvent('VERIFICATION_SUCCESS', interaction.user, `-> RSN "${officialRsn}" found in group!`);
                 const member = interaction.member;
                 
                 await member.roles.add(config.roleToGive).catch(err => logEvent('ROLE_ADD_FAILED', interaction.user, err.message));
@@ -292,17 +301,18 @@ client.on('interactionCreate', async interaction => {
                     await member.roles.remove(config.roleToRemove).catch(err => logEvent('ROLE_REMOVE_FAILED', interaction.user, err.message));
                 }
 
-                await member.setNickname(rsn).catch(err => logEvent('NICKNAME_CHANGE_FAILED', interaction.user, err.message)); 
+                // Set their nickname using the official casing
+                await member.setNickname(officialRsn).catch(err => logEvent('NICKNAME_CHANGE_FAILED', interaction.user, err.message)); 
 
-                await interaction.editReply(`Success! Your RSN **${rsn}** has been verified. Welcome to the clan!`);
+                await interaction.editReply(`Success! Your RSN **${officialRsn}** has been verified. Welcome to the clan!`);
             } else {
-                logEvent('VERIFICATION_FAILED', interaction.user, `-> RSN "${rsn}" NOT found in group.`);
+                logEvent('VERIFICATION_FAILED', interaction.user, `-> RSN "${userInputRsn}" NOT found in group.`);
 
                 try {
                     const thread = await interaction.channel.threads.create({
                         name: `verify-${interaction.user.username}`,
                         type: ChannelType.PrivateThread,
-                        reason: `Verification failed for RSN: ${rsn}`,
+                        reason: `Verification failed for RSN: ${userInputRsn}`,
                     });
 
                     logEvent('THREAD_CREATED', interaction.user, `-> Private Thread Created: ${thread.name} (${thread.id})`);
@@ -311,13 +321,13 @@ client.on('interactionCreate', async interaction => {
 
                     const staffPings = `<@&${GOLD_KEY_ROLE_ID}> <@&${SILVER_KEY_ROLE_ID}> <@&${MODERATOR_ROLE_ID}>`;
                     await thread.send({
-                        content: `Hello ${interaction.user}, your verification for RSN **${rsn}** was not found in the clan list on Wise Old Man.\n\n${staffPings} - Please assist with manually reviewing this verification.`
+                        content: `Hello ${interaction.user}, your verification for RSN **${userInputRsn}** was not found in the clan list on Wise Old Man.\n\n${staffPings} - Please assist with manually reviewing this verification.`
                     });
 
-                    await interaction.editReply(`We couldn't find **${rsn}** in the clan logs. A private support thread (<#${thread.id}>) has been created for staff to assist you!`);
+                    await interaction.editReply(`We couldn't find **${userInputRsn}** in the clan logs. A private support thread (<#${thread.id}>) has been created for staff to assist you!`);
                 } catch (threadError) {
                     logEvent('THREAD_CREATE_ERROR', interaction.user, `-> ${threadError.message}`);
-                    await interaction.editReply(`We couldn't find **${rsn}** in the clan logs. Please contact staff directly for assistance.`);
+                    await interaction.editReply(`We couldn't find **${userInputRsn}** in the clan logs. Please contact staff directly for assistance.`);
                 }
             }
         } catch (error) {
@@ -325,7 +335,6 @@ client.on('interactionCreate', async interaction => {
             await interaction.editReply('An error occurred contacting the Wise Old Man API. Please try again later.');
         }
     }
-});
 
 // --- DUMMY WEB SERVER FOR CLOUD HOSTING ---
 const http = require('http');
