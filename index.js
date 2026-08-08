@@ -381,4 +381,18 @@ client.once('clientReady', async () => {
     }
 });
 
+// --- KEEP-ALIVE PINGER ---
+const https = require('https');
+const RENDER_URL = 'https://honey-pot-bot-nrd3.onrender.com';
+
+// Ping the dummy server every 14 minutes (840,000 milliseconds)
+setInterval(() => {
+    https.get(RENDER_URL, (res) => {
+        logEvent('SYSTEM_KEEPALIVE', null, `-> Pinged self to prevent sleep. Status: ${res.statusCode}`);
+    }).on('error', (err) => {
+        logEvent('SYSTEM_KEEPALIVE_ERROR', null, `-> Failed to ping: ${err.message}`);
+    });
+}, 14 * 60 * 1000); 
+// -------------------------
+
 client.login(process.env.DISCORD_TOKEN);
