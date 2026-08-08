@@ -11,7 +11,8 @@ const {
     RoleSelectMenuBuilder,
     PermissionsBitField,
     EmbedBuilder,
-    ChannelType
+    ChannelType,
+    ApplicationCommandOptionType
 } = require('discord.js');
 const { WOMClient } = require('@wise-old-man/utils');
 
@@ -21,11 +22,11 @@ const womClient = new WOMClient({ userAgent: 'Honey Trap Bot' });
 const GROUP_ID = 25853; 
 
 // --- STAFF ROLE CONFIGURATION FOR FAILED VERIFICATIONS ---
-// Replace these with your actual Discord Role IDs
 const GOLD_KEY_ROLE_ID = '1534942887765348473';
 const SILVER_KEY_ROLE_ID = '1535009097705853058';
 const MODERATOR_ROLE_ID = '1534942953640955949';
 const ENTRY_ROLE_ID = '1535176809195503667';
+const FLAGGED_ROLE_ID = '1535508809118781491';
 
 // --- IN-MEMORY CONFIGURATION ---
 const guildConfigs = new Map();
@@ -47,7 +48,9 @@ function logEvent(action, user, details = '') {
 
 client.on('interactionCreate', async interaction => {
     
-    // 1. ADMIN COMMAND: Deploy the Admin Panel
+    // ==========================================
+    // ADMIN PANEL & SETUP COMMANDS
+    // ==========================================
     if (interaction.isChatInputCommand() && interaction.commandName === 'admin-panel') {
         logEvent('COMMAND_USED', interaction.user, '-> /admin-panel');
         if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
@@ -72,25 +75,6 @@ client.on('interactionCreate', async interaction => {
         });
     }
 
-    // 2. ADMIN PANEL: Handle Drop-down Selections
-    if (interaction.isRoleSelectMenu()) {
-        const config = getConfig(interaction.guild.id);
-        const selectedRoleId = interaction.values[0];
-
-        if (interaction.customId === 'admin_set_give_role') {
-            config.roleToGive = selectedRoleId;
-            logEvent('ADMIN_CONFIG_UPDATE', interaction.user, `-> Set RoleToGive: ${selectedRoleId}`);
-            await interaction.reply({ content: `✅ Successfully set the **GIVEN** role to <@&${selectedRoleId}>.`, ephemeral: true });
-        }
-
-        if (interaction.customId === 'admin_set_remove_role') {
-            config.roleToRemove = selectedRoleId;
-            logEvent('ADMIN_CONFIG_UPDATE', interaction.user, `-> Set RoleToRemove: ${selectedRoleId}`);
-            await interaction.reply({ content: `✅ Successfully set the **REMOVED** role to <@&${selectedRoleId}>.`, ephemeral: true });
-        }
-    }
-
-    // 3. USER COMMAND: Deploy Verification Panel
     if (interaction.isChatInputCommand() && interaction.commandName === 'setup-panel') {
         logEvent('COMMAND_USED', interaction.user, '-> /setup-panel');
         if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
@@ -117,11 +101,144 @@ client.on('interactionCreate', async interaction => {
         });
     }
 
-    // 4. USER ACTION: Handle Button Click -> Open Modal
+    // ==========================================
+    // NEW ADMIN COMMAND: /manual-verify
+    // ==========================================
+    if (interaction.isChatInputCommand() && interaction.commandName === 'manual-verify') {
+        logEvent('COMMAND_USED', interaction.user, '-> /manual-verify');
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+        }
+
+        await interaction.deferReply({ ephemeral: true });
+        const targetMember = interaction.options.getMember('user');
+        const rsn = interaction.options.getString('rsn').trim();
+        const config = getConfig(interaction.guild.id);
+
+        if (!config.roleToGive) {
+            return interaction.editReply('⚠️ The admins have not configured the verification roles yet. Please run `/admin-panel` first!');
+        }
+
+        try {
+            await targetMember.roles.add(config.roleToGive);
+            if (config.roleToRemove) await targetMember.roles.remove(config.roleToRemove);
+            await targetMember.setNickname(rsn);
+
+            logEvent('MANUAL_VERIFY_SUCCESS', interaction.user, `-> Verified ${targetMember.user.tag} as "${rsn}"`);
+            await interaction.editReply(`✅ Successfully verified <@${targetMember.id}> as **${rsn}** manually.`);
+        } catch (error) {
+            logEvent('MANUAL_VERIFY_ERROR', interaction.user, `-> ${error.message}`);
+            await interaction.editReply(`❌ Error applying roles/nickname: ${error.message}\n*(Make sure the bot's role is higher than the user's role!)*`);
+        }
+    }
+
+    // ==========================================
+    // NEW ADMIN COMMAND: /audit
+    // ==========================================
+    if (interaction.isChatInputCommand() && interaction.commandName === 'audit') {
+        logEvent('COMMAND_USED', interaction.user, '-> /audit');
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+        }
+
+        await interaction.deferReply({ ephemeral: true });
+        const config = getConfig(interaction.guild.id);
+
+        if (!config.roleToGive) {
+            return interaction.editReply('⚠️ You must run `/admin-panel` and set the verified role before you can audit it!');
+        }
+
+        try {
+            logEvent('AUDIT_STARTED', interaction.user, `-> Fetching WOM and Discord Members...`);
+            const group = await womClient.groups.getGroupDetails(GROUP_ID);
+            const womMembers = group.memberships.map(m => m.player.username.toLowerCase());
+
+            const guildMembers = await interaction.guild.members.fetch();
+            const verifiedMembers = guildMembers.filter(m => m.roles.cache.has(config.roleToGive));
+
+            let flaggedCount = 0;
+            let flaggedNames = [];
+
+            for (const [id, member] of verifiedMembers) {
+                // If they don't have a nickname, it defaults to their Discord display name
+                const currentName = (member.nickname || member.user.displayName).toLowerCase();
+                
+                if (!womMembers.includes(currentName)) {
+                    await member.roles.add(FLAGGED_ROLE_ID).catch(err => logEvent('FLAG_ERROR', interaction.user, `Failed to flag ${currentName}: ${err.message}`));
+                    flaggedCount++;
+                    flaggedNames.push(currentName);
+                }
+            }
+
+            logEvent('AUDIT_COMPLETE', interaction.user, `-> Flagged ${flaggedCount} members.`);
+            
+            if (flaggedCount === 0) {
+                await interaction.editReply('✅ Audit complete! All verified Discord members are present in the Wise Old Man clan list.');
+            } else {
+                await interaction.editReply(`⚠️ **Audit Complete!**\nFlagged **${flaggedCount}** members who are no longer in the WOM clan list.\n\nNames flagged: ${flaggedNames.join(', ')}`);
+            }
+        } catch (error) {
+            logEvent('AUDIT_ERROR', interaction.user, `-> ${error.message}`);
+            await interaction.editReply('❌ An error occurred during the audit. Check the Render logs for details.');
+        }
+    }
+
+    // ==========================================
+    // NEW ADMIN COMMAND: /purge
+    // ==========================================
+    if (interaction.isChatInputCommand() && interaction.commandName === 'purge') {
+        logEvent('COMMAND_USED', interaction.user, '-> /purge');
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+        }
+
+        await interaction.deferReply({ ephemeral: true });
+
+        try {
+            const guildMembers = await interaction.guild.members.fetch();
+            const flaggedMembers = guildMembers.filter(m => m.roles.cache.has(FLAGGED_ROLE_ID));
+
+            if (flaggedMembers.size === 0) {
+                return interaction.editReply('There is no one currently flagged for purging.');
+            }
+
+            let kickedCount = 0;
+            for (const [id, member] of flaggedMembers) {
+                await member.kick('Purged via Admin Audit Command').catch(err => logEvent('KICK_ERROR', interaction.user, `Failed to kick ${member.user.tag}: ${err.message}`));
+                kickedCount++;
+            }
+
+            logEvent('PURGE_COMPLETE', interaction.user, `-> Kicked ${kickedCount} members.`);
+            await interaction.editReply(`✅ Successfully purged **${kickedCount}** flagged members from the server.`);
+        } catch (error) {
+            logEvent('PURGE_ERROR', interaction.user, `-> ${error.message}`);
+            await interaction.editReply('❌ An error occurred while purging members. Check the Render logs.');
+        }
+    }
+
+    // ==========================================
+    // DROP-DOWN & BUTTON HANDLERS
+    // ==========================================
+    if (interaction.isRoleSelectMenu()) {
+        const config = getConfig(interaction.guild.id);
+        const selectedRoleId = interaction.values[0];
+
+        if (interaction.customId === 'admin_set_give_role') {
+            config.roleToGive = selectedRoleId;
+            logEvent('ADMIN_CONFIG_UPDATE', interaction.user, `-> Set RoleToGive: ${selectedRoleId}`);
+            await interaction.reply({ content: `✅ Successfully set the **GIVEN** role to <@&${selectedRoleId}>.`, ephemeral: true });
+        }
+
+        if (interaction.customId === 'admin_set_remove_role') {
+            config.roleToRemove = selectedRoleId;
+            logEvent('ADMIN_CONFIG_UPDATE', interaction.user, `-> Set RoleToRemove: ${selectedRoleId}`);
+            await interaction.reply({ content: `✅ Successfully set the **REMOVED** role to <@&${selectedRoleId}>.`, ephemeral: true });
+        }
+    }
+
     if (interaction.isButton() && interaction.customId === 'open_verify_modal') {
         logEvent('BUTTON_CLICKED', interaction.user, '-> Clicked Verify Button');
 
-        // --- NEW SECURITY CHECK: REQUIRE ENTRY RANK ---
         if (!interaction.member.roles.cache.has(ENTRY_ROLE_ID)) {
             logEvent('VERIFY_DENIED', interaction.user, '-> User lacks the required Entry Rank to use the panel.');
             return interaction.reply({ 
@@ -129,7 +246,6 @@ client.on('interactionCreate', async interaction => {
                 ephemeral: true 
             });
         }
-        // ----------------------------------------------
         
         const modal = new ModalBuilder()
             .setCustomId('rsn_modal')
@@ -147,7 +263,9 @@ client.on('interactionCreate', async interaction => {
         await interaction.showModal(modal);
     }
 
-    // 5. USER ACTION: Modal Submit -> WOM Check & Process
+    // ==========================================
+    // MODAL SUBMIT HANDLER (WOM CHECK)
+    // ==========================================
     if (interaction.isModalSubmit() && interaction.customId === 'rsn_modal') {
         const rsn = interaction.fields.getTextInputValue('rsn_input').trim().toLowerCase();
         logEvent('MODAL_SUBMITTED', interaction.user, `-> Entered RSN: "${rsn}"`);
@@ -166,7 +284,6 @@ client.on('interactionCreate', async interaction => {
             const isMember = group.memberships.some(m => m.player.username.toLowerCase() === rsn);
 
             if (isMember) {
-                // --- SUCCESSFUL VERIFICATION ---
                 logEvent('VERIFICATION_SUCCESS', interaction.user, `-> RSN "${rsn}" found in group!`);
                 const member = interaction.member;
                 
@@ -179,7 +296,6 @@ client.on('interactionCreate', async interaction => {
 
                 await interaction.editReply(`Success! Your RSN **${rsn}** has been verified. Welcome to the clan!`);
             } else {
-                // --- FAILED VERIFICATION: CREATE PRIVATE THREAD ---
                 logEvent('VERIFICATION_FAILED', interaction.user, `-> RSN "${rsn}" NOT found in group.`);
 
                 try {
@@ -231,6 +347,32 @@ client.once('clientReady', async () => {
             {
                 name: 'admin-panel',
                 description: 'Configure verification roles (Admin only)'
+            },
+            {
+                name: 'manual-verify',
+                description: 'Manually verify a user and set their RSN (Admin only)',
+                options: [
+                    {
+                        name: 'user',
+                        description: 'The Discord user to verify',
+                        type: ApplicationCommandOptionType.User,
+                        required: true
+                    },
+                    {
+                        name: 'rsn',
+                        description: 'The exact in-game name of the user',
+                        type: ApplicationCommandOptionType.String,
+                        required: true
+                    }
+                ]
+            },
+            {
+                name: 'audit',
+                description: 'Audit verified members against the live WOM clan list (Admin only)'
+            },
+            {
+                name: 'purge',
+                description: 'Kick all members who have the Flagged role from the server (Admin only)'
             }
         ]);
         logEvent('SYSTEM_INFO', null, '✅ Slash commands registered successfully!');
