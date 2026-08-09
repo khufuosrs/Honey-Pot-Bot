@@ -319,7 +319,7 @@ client.on('interactionCreate', async interaction => {
             const matchedMember = group.memberships.find(m => m.player.username.toLowerCase() === searchRsn);
 
             if (matchedMember) {
-                const officialRsn = matchedMember.player.username;
+                const officialRsn = matchedMember.player.displayName;
 
                 logEvent('VERIFICATION_SUCCESS', interaction.user, `-> RSN "${officialRsn}" found in group!`);
                 const member = interaction.member;
