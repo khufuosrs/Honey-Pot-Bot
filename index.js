@@ -1,3 +1,8 @@
+// --- NETWORK OVERRIDE ---
+const dns = require('node:dns');
+dns.setDefaultResultOrder('ipv4first');
+// ------------------------
+
 require('dotenv').config();
 const { 
     Client, 
@@ -17,6 +22,12 @@ const {
 const { WOMClient } = require('@wise-old-man/utils');
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
+
+// --- NETWORK ERROR TRACKERS ---
+client.on('error', error => logEvent('WEBSOCKET_ERROR', null, error.message));
+client.on('warn', info => logEvent('SYSTEM_WARNING', null, info));
+// ------------------------------
+
 const womClient = new WOMClient({ userAgent: 'Honey Trap Bot' }); 
 
 const GROUP_ID = 25853; 
