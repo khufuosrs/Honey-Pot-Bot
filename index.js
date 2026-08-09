@@ -332,7 +332,7 @@ client.on('interactionCreate', async interaction => {
 // --- DUMMY WEB SERVER FOR CLOUD HOSTING ---
 const http = require('http');
 http.createServer((req, res) => {
-    res.write("I'm alive");
+    res.write("Honey Trap Bot is buzzing around, collecting pollen, and making honey. Next is to verify the new members of The Hive to ensure not ploys are concocted against the Queen Bee.");
     res.end();
 }).listen(process.env.PORT || 8080);
 
