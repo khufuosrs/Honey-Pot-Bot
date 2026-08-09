@@ -12,7 +12,7 @@ const {
     PermissionsBitField,
     EmbedBuilder,
     ChannelType,
-    ApplicationCommandOptionType
+    ApplicationCommandOptionType 
 } = require('discord.js');
 const { WOMClient } = require('@wise-old-man/utils');
 
@@ -26,7 +26,7 @@ const GOLD_KEY_ROLE_ID = '1534942887765348473';
 const SILVER_KEY_ROLE_ID = '1535009097705853058';
 const MODERATOR_ROLE_ID = '1534942953640955949';
 const ENTRY_ROLE_ID = '1535176809195503667';
-const FLAGGED_ROLE_ID = '1535508809118781491';
+const FLAGGED_ROLE_ID = '1535508809118781491'; 
 
 // --- IN-MEMORY CONFIGURATION ---
 const guildConfigs = new Map();
@@ -44,7 +44,6 @@ function logEvent(action, user, details = '') {
     const userInfo = user ? `[User: ${user.tag} | ID: ${user.id}]` : '[System]';
     console.log(`[${timestamp}] ${userInfo} ${action} ${details}`);
 }
-// ----------------------------------------------
 
 client.on('interactionCreate', async interaction => {
     
@@ -91,7 +90,7 @@ client.on('interactionCreate', async interaction => {
         const panelEmbed = new EmbedBuilder()
             .setTitle('__***Honey Trap***__ Clan Verification')
             .setDescription('Welcome to the server! To gain full access, you must link your Discord account to your Old School RuneScape account.\n\nClick the **Verify RSN** button below and type your exact in-game name.')
-            .setColor('#F0B849')
+            .setColor('#FFFF00')
             .setThumbnail('https://imgur.com/VHk74nK.jpg')
 			.setImage('https://imgur.com/msNAMI7.jpg');
 
@@ -102,12 +101,12 @@ client.on('interactionCreate', async interaction => {
     }
 
     // ==========================================
-    // NEW ADMIN COMMAND: /manual-verify
+    // ADMIN COMMAND: /manual-verify
     // ==========================================
     if (interaction.isChatInputCommand() && interaction.commandName === 'manual-verify') {
         logEvent('COMMAND_USED', interaction.user, '-> /manual-verify');
         if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: false });
+            return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
         }
 
         await interaction.deferReply({ ephemeral: true });
@@ -133,7 +132,7 @@ client.on('interactionCreate', async interaction => {
     }
 
     // ==========================================
-    // NEW ADMIN COMMAND: /audit
+    // ADMIN COMMAND: /audit
     // ==========================================
     if (interaction.isChatInputCommand() && interaction.commandName === 'audit') {
         logEvent('COMMAND_USED', interaction.user, '-> /audit');
@@ -160,7 +159,6 @@ client.on('interactionCreate', async interaction => {
             let flaggedNames = [];
 
             for (const [id, member] of verifiedMembers) {
-                // If they don't have a nickname, it defaults to their Discord display name
                 const currentName = (member.nickname || member.user.displayName).toLowerCase();
                 
                 if (!womMembers.includes(currentName)) {
@@ -184,7 +182,7 @@ client.on('interactionCreate', async interaction => {
     }
 
     // ==========================================
-    // NEW ADMIN COMMAND: /purge
+    // ADMIN COMMAND: /purge
     // ==========================================
     if (interaction.isChatInputCommand() && interaction.commandName === 'purge') {
         logEvent('COMMAND_USED', interaction.user, '-> /purge');
@@ -264,11 +262,9 @@ client.on('interactionCreate', async interaction => {
     }
 
     // ==========================================
-    // MODAL SUBMIT HANDLER (WOM CHECK)
+    // MODAL SUBMIT HANDLER (WOM CHECK WITH CASING)
     // ==========================================
     if (interaction.isModalSubmit() && interaction.customId === 'rsn_modal') {
-        
-        // Save the raw input for logging, and a lowercase version for searching
         const userInputRsn = interaction.fields.getTextInputValue('rsn_input').trim();
         const searchRsn = userInputRsn.toLowerCase();
         
@@ -285,12 +281,9 @@ client.on('interactionCreate', async interaction => {
         try {
             logEvent('API_REQUEST', interaction.user, `-> Querying Wise Old Man Group ID: ${GROUP_ID}`);
             const group = await womClient.groups.getGroupDetails(GROUP_ID);
-            
-            // NEW: Find the exact player object instead of just checking if they exist
             const matchedMember = group.memberships.find(m => m.player.username.toLowerCase() === searchRsn);
 
             if (matchedMember) {
-                // Pull the perfectly capitalized official name straight from Wise Old Man
                 const officialRsn = matchedMember.player.username;
 
                 logEvent('VERIFICATION_SUCCESS', interaction.user, `-> RSN "${officialRsn}" found in group!`);
@@ -301,7 +294,6 @@ client.on('interactionCreate', async interaction => {
                     await member.roles.remove(config.roleToRemove).catch(err => logEvent('ROLE_REMOVE_FAILED', interaction.user, err.message));
                 }
 
-                // Set their nickname using the official casing
                 await member.setNickname(officialRsn).catch(err => logEvent('NICKNAME_CHANGE_FAILED', interaction.user, err.message)); 
 
                 await interaction.editReply(`Success! Your RSN **${officialRsn}** has been verified. Welcome to the clan!`);
@@ -335,6 +327,7 @@ client.on('interactionCreate', async interaction => {
             await interaction.editReply('An error occurred contacting the Wise Old Man API. Please try again later.');
         }
     }
+});
 
 // --- DUMMY WEB SERVER FOR CLOUD HOSTING ---
 const http = require('http');
@@ -343,58 +336,10 @@ http.createServer((req, res) => {
     res.end();
 }).listen(process.env.PORT || 8080);
 
-// --- Register Slash Commands ---
-client.once('clientReady', async () => {
-    logEvent('SYSTEM_START', null, `Logged in as ${client.user.tag}`);
-    
-    try {
-        await client.application.commands.set([
-            {
-                name: 'setup-panel',
-                description: 'Deploy the clan verification panel (Admin only)'
-            },
-            {
-                name: 'admin-panel',
-                description: 'Configure verification roles (Admin only)'
-            },
-            {
-                name: 'manual-verify',
-                description: 'Manually verify a user and set their RSN (Admin only)',
-                options: [
-                    {
-                        name: 'user',
-                        description: 'The Discord user to verify',
-                        type: ApplicationCommandOptionType.User,
-                        required: true
-                    },
-                    {
-                        name: 'rsn',
-                        description: 'The exact in-game name of the user',
-                        type: ApplicationCommandOptionType.String,
-                        required: true
-                    }
-                ]
-            },
-            {
-                name: 'audit',
-                description: 'Audit verified members against the live WOM clan list (Admin only)'
-            },
-            {
-                name: 'purge',
-                description: 'Kick all members who have the Flagged role from the server (Admin only)'
-            }
-        ]);
-        logEvent('SYSTEM_INFO', null, '✅ Slash commands registered successfully!');
-    } catch (error) {
-        logEvent('SYSTEM_ERROR', null, `Error registering commands: ${error.message}`);
-    }
-});
-
 // --- KEEP-ALIVE PINGER ---
 const https = require('https');
 const RENDER_URL = 'https://honey-pot-bot-nrd3.onrender.com';
 
-// Ping the dummy server every 14 minutes (840,000 milliseconds)
 setInterval(() => {
     https.get(RENDER_URL, (res) => {
         logEvent('SYSTEM_KEEPALIVE', null, `-> Pinged self to prevent sleep. Status: ${res.statusCode}`);
@@ -402,6 +347,30 @@ setInterval(() => {
         logEvent('SYSTEM_KEEPALIVE_ERROR', null, `-> Failed to ping: ${err.message}`);
     });
 }, 14 * 60 * 1000); 
-// -------------------------
+
+// --- Register Slash Commands ---
+client.once('clientReady', async () => {
+    logEvent('SYSTEM_START', null, `Logged in as ${client.user.tag}`);
+    
+    try {
+        await client.application.commands.set([
+            { name: 'setup-panel', description: 'Deploy the clan verification panel (Admin only)' },
+            { name: 'admin-panel', description: 'Configure verification roles (Admin only)' },
+            {
+                name: 'manual-verify',
+                description: 'Manually verify a user and set their RSN (Admin only)',
+                options: [
+                    { name: 'user', description: 'The Discord user to verify', type: ApplicationCommandOptionType.User, required: true },
+                    { name: 'rsn', description: 'The exact in-game name of the user', type: ApplicationCommandOptionType.String, required: true }
+                ]
+            },
+            { name: 'audit', description: 'Audit verified members against the live WOM clan list (Admin only)' },
+            { name: 'purge', description: 'Kick all members who have the Flagged role from the server (Admin only)' }
+        ]);
+        logEvent('SYSTEM_INFO', null, '✅ Slash commands registered successfully!');
+    } catch (error) {
+        logEvent('SYSTEM_ERROR', null, `Error registering commands: ${error.message}`);
+    }
+});
 
 client.login(process.env.DISCORD_TOKEN);
