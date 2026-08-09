@@ -1,8 +1,3 @@
-// --- NETWORK OVERRIDE ---
-const dns = require('node:dns');
-dns.setDefaultResultOrder('ipv4first');
-// ------------------------
-
 require('dotenv').config();
 const { 
     Client, 
@@ -17,27 +12,23 @@ const {
     PermissionsBitField,
     EmbedBuilder,
     ChannelType,
-    ApplicationCommandOptionType 
+    ApplicationCommandOptionType,
+    MessageFlags
 } = require('discord.js');
 const { WOMClient } = require('@wise-old-man/utils');
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers] });
-
-// --- NETWORK ERROR TRACKERS ---
-client.on('error', error => logEvent('WEBSOCKET_ERROR', null, error.message));
-client.on('warn', info => logEvent('SYSTEM_WARNING', null, info));
-// ------------------------------
-
 const womClient = new WOMClient({ userAgent: 'Honey Trap Bot' }); 
 
 const GROUP_ID = 25853; 
 
-// --- STAFF ROLE CONFIGURATION FOR FAILED VERIFICATIONS ---
+// --- STAFF, ENTRY, FLAGGED, & LOG ROLE CONFIGURATION ---
 const GOLD_KEY_ROLE_ID = '1534942887765348473';
 const SILVER_KEY_ROLE_ID = '1535009097705853058';
 const MODERATOR_ROLE_ID = '1534942953640955949';
-const ENTRY_ROLE_ID = '1535176809195503667';
+const ENTRY_ROLE_ID = '1535176809195503667'; 
 const FLAGGED_ROLE_ID = '1535508809118781491'; 
+const LOG_CHANNEL_ID = '1536091974547808420';
 
 // --- IN-MEMORY CONFIGURATION ---
 const guildConfigs = new Map();
@@ -49,12 +40,35 @@ function getConfig(guildId) {
     return guildConfigs.get(guildId);
 }
 
-// --- HELPER FUNCTION: Render Detailed Logger ---
+// --- HELPER FUNCTION: Render Console Logger ---
 function logEvent(action, user, details = '') {
     const timestamp = new Date().toISOString();
     const userInfo = user ? `[User: ${user.tag} | ID: ${user.id}]` : '[System]';
     console.log(`[${timestamp}] ${userInfo} ${action} ${details}`);
 }
+
+// --- HELPER FUNCTION: Discord Channel Logger ---
+async function sendDiscordLog(interaction, title, description, color) {
+    try {
+        const logChannel = interaction.guild.channels.cache.get(LOG_CHANNEL_ID);
+        if (!logChannel) {
+            console.log('⚠️ Could not find the Discord log channel. Check your LOG_CHANNEL_ID.');
+            return; 
+        }
+
+        const logEmbed = new EmbedBuilder()
+            .setTitle(title)
+            .setDescription(description)
+            .setColor(color)
+            .setTimestamp()
+            .setFooter({ text: `Discord ID: ${interaction.user.id}` });
+
+        await logChannel.send({ embeds: [logEmbed] });
+    } catch (error) {
+        console.error("❌ Failed to send log to Discord channel:", error.message);
+    }
+}
+// ----------------------------------------------
 
 client.on('interactionCreate', async interaction => {
     
@@ -64,7 +78,7 @@ client.on('interactionCreate', async interaction => {
     if (interaction.isChatInputCommand() && interaction.commandName === 'admin-panel') {
         logEvent('COMMAND_USED', interaction.user, '-> /admin-panel');
         if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+            return interaction.reply({ content: 'You do not have permission to use this command.', flags: MessageFlags.Ephemeral });
         }
 
         const giveRoleMenu = new RoleSelectMenuBuilder()
@@ -81,14 +95,14 @@ client.on('interactionCreate', async interaction => {
         await interaction.reply({ 
             content: '**⚙️ Verification Admin Panel**\nUse the drop-down menus below to configure the verification roles.', 
             components: [row1, row2],
-            ephemeral: true 
+            flags: MessageFlags.Ephemeral 
         });
     }
 
     if (interaction.isChatInputCommand() && interaction.commandName === 'setup-panel') {
         logEvent('COMMAND_USED', interaction.user, '-> /setup-panel');
         if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return interaction.reply({ content: 'You do not have permission to set up the panel.', ephemeral: true });
+            return interaction.reply({ content: 'You do not have permission to set up the panel.', flags: MessageFlags.Ephemeral });
         }
 
         const verifyBtn = new ButtonBuilder()
@@ -98,10 +112,10 @@ client.on('interactionCreate', async interaction => {
         
         const row = new ActionRowBuilder().addComponents(verifyBtn);
 
-        const panelEmbed = new EmbedBuilder()
+		const panelEmbed = new EmbedBuilder()
             .setTitle('__***Honey Trap***__ Clan Verification')
             .setDescription('Welcome to the server! To gain full access, you must link your Discord account to your Old School RuneScape account.\n\nClick the **Verify RSN** button below and type your exact in-game name.')
-            .setColor('#FFFF00')
+            .setColor('#EBA937')
             .setThumbnail('https://imgur.com/VHk74nK.jpg')
 			.setImage('https://imgur.com/msNAMI7.jpg');
 
@@ -117,10 +131,10 @@ client.on('interactionCreate', async interaction => {
     if (interaction.isChatInputCommand() && interaction.commandName === 'manual-verify') {
         logEvent('COMMAND_USED', interaction.user, '-> /manual-verify');
         if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+            return interaction.reply({ content: 'You do not have permission to use this command.', flags: MessageFlags.Ephemeral });
         }
 
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const targetMember = interaction.options.getMember('user');
         const rsn = interaction.options.getString('rsn').trim();
         const config = getConfig(interaction.guild.id);
@@ -135,6 +149,16 @@ client.on('interactionCreate', async interaction => {
             await targetMember.setNickname(rsn);
 
             logEvent('MANUAL_VERIFY_SUCCESS', interaction.user, `-> Verified ${targetMember.user.tag} as "${rsn}"`);
+            
+            // --- NEW: Send to #verify-logs ---
+            await sendDiscordLog(
+                interaction, 
+                '🛠️ Manual Verification', 
+                `**Admin:** ${interaction.user}\n**Verified User:** ${targetMember.user}\n**Assigned RSN:** \`${rsn}\``, 
+                '#3498DB' // Blue color
+            );
+            // ---------------------------------
+
             await interaction.editReply(`✅ Successfully verified <@${targetMember.id}> as **${rsn}** manually.`);
         } catch (error) {
             logEvent('MANUAL_VERIFY_ERROR', interaction.user, `-> ${error.message}`);
@@ -148,10 +172,10 @@ client.on('interactionCreate', async interaction => {
     if (interaction.isChatInputCommand() && interaction.commandName === 'audit') {
         logEvent('COMMAND_USED', interaction.user, '-> /audit');
         if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+            return interaction.reply({ content: 'You do not have permission to use this command.', flags: MessageFlags.Ephemeral });
         }
 
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const config = getConfig(interaction.guild.id);
 
         if (!config.roleToGive) {
@@ -188,7 +212,7 @@ client.on('interactionCreate', async interaction => {
             }
         } catch (error) {
             logEvent('AUDIT_ERROR', interaction.user, `-> ${error.message}`);
-            await interaction.editReply('❌ An error occurred during the audit. Check the Render logs for details.');
+            await interaction.editReply('❌ An error occurred during the audit. Check the Railway logs for details.');
         }
     }
 
@@ -198,10 +222,10 @@ client.on('interactionCreate', async interaction => {
     if (interaction.isChatInputCommand() && interaction.commandName === 'purge') {
         logEvent('COMMAND_USED', interaction.user, '-> /purge');
         if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+            return interaction.reply({ content: 'You do not have permission to use this command.', flags: MessageFlags.Ephemeral });
         }
 
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
         try {
             const guildMembers = await interaction.guild.members.fetch();
@@ -221,7 +245,7 @@ client.on('interactionCreate', async interaction => {
             await interaction.editReply(`✅ Successfully purged **${kickedCount}** flagged members from the server.`);
         } catch (error) {
             logEvent('PURGE_ERROR', interaction.user, `-> ${error.message}`);
-            await interaction.editReply('❌ An error occurred while purging members. Check the Render logs.');
+            await interaction.editReply('❌ An error occurred while purging members. Check the Railway logs.');
         }
     }
 
@@ -235,13 +259,13 @@ client.on('interactionCreate', async interaction => {
         if (interaction.customId === 'admin_set_give_role') {
             config.roleToGive = selectedRoleId;
             logEvent('ADMIN_CONFIG_UPDATE', interaction.user, `-> Set RoleToGive: ${selectedRoleId}`);
-            await interaction.reply({ content: `✅ Successfully set the **GIVEN** role to <@&${selectedRoleId}>.`, ephemeral: true });
+            await interaction.reply({ content: `✅ Successfully set the **GIVEN** role to <@&${selectedRoleId}>.`, flags: MessageFlags.Ephemeral });
         }
 
         if (interaction.customId === 'admin_set_remove_role') {
             config.roleToRemove = selectedRoleId;
             logEvent('ADMIN_CONFIG_UPDATE', interaction.user, `-> Set RoleToRemove: ${selectedRoleId}`);
-            await interaction.reply({ content: `✅ Successfully set the **REMOVED** role to <@&${selectedRoleId}>.`, ephemeral: true });
+            await interaction.reply({ content: `✅ Successfully set the **REMOVED** role to <@&${selectedRoleId}>.`, flags: MessageFlags.Ephemeral });
         }
     }
 
@@ -252,7 +276,7 @@ client.on('interactionCreate', async interaction => {
             logEvent('VERIFY_DENIED', interaction.user, '-> User lacks the required Entry Rank to use the panel.');
             return interaction.reply({ 
                 content: '⚠️ You do not have the required Entry rank to use this verification panel.', 
-                ephemeral: true 
+                flags: MessageFlags.Ephemeral 
             });
         }
         
@@ -281,7 +305,7 @@ client.on('interactionCreate', async interaction => {
         
         logEvent('MODAL_SUBMITTED', interaction.user, `-> Entered RSN: "${userInputRsn}"`);
         
-        await interaction.deferReply({ ephemeral: true }); 
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral }); 
         const config = getConfig(interaction.guild.id);
 
         if (!config.roleToGive) {
@@ -307,6 +331,15 @@ client.on('interactionCreate', async interaction => {
 
                 await member.setNickname(officialRsn).catch(err => logEvent('NICKNAME_CHANGE_FAILED', interaction.user, err.message)); 
 
+                // --- NEW: Send Success Log to #verify-logs ---
+                await sendDiscordLog(
+                    interaction, 
+                    '✅ Verification Success', 
+                    `**User:** ${interaction.user}\n**Verified RSN:** \`${officialRsn}\``, 
+                    '#2ECC71' // Green color
+                );
+                // ---------------------------------------------
+
                 await interaction.editReply(`Success! Your RSN **${officialRsn}** has been verified. Welcome to the clan!`);
             } else {
                 logEvent('VERIFICATION_FAILED', interaction.user, `-> RSN "${userInputRsn}" NOT found in group.`);
@@ -327,6 +360,15 @@ client.on('interactionCreate', async interaction => {
                         content: `Hello ${interaction.user}, your verification for RSN **${userInputRsn}** was not found in the clan list on Wise Old Man.\n\n${staffPings} - Please assist with manually reviewing this verification.`
                     });
 
+                    // --- NEW: Send Failure Log to #verify-logs ---
+                    await sendDiscordLog(
+                        interaction, 
+                        '❌ Verification Failed', 
+                        `**User:** ${interaction.user}\n**Attempted RSN:** \`${userInputRsn}\`\n**Result:** Not found on WOM. Private support thread <#${thread.id}> created.`, 
+                        '#E74C3C' // Red color
+                    );
+                    // ---------------------------------------------
+
                     await interaction.editReply(`We couldn't find **${userInputRsn}** in the clan logs. A private support thread (<#${thread.id}>) has been created for staff to assist you!`);
                 } catch (threadError) {
                     logEvent('THREAD_CREATE_ERROR', interaction.user, `-> ${threadError.message}`);
@@ -343,24 +385,12 @@ client.on('interactionCreate', async interaction => {
 // --- DUMMY WEB SERVER FOR CLOUD HOSTING ---
 const http = require('http');
 http.createServer((req, res) => {
-    res.write("Honey Trap Bot is buzzing around, collecting pollen, and making honey. Next is to verify the new members of The Hive to ensure not ploys are concocted against the Queen Bee.");
+    res.write("I'm alive");
     res.end();
 }).listen(process.env.PORT || 8080);
 
-// --- KEEP-ALIVE PINGER ---
-const https = require('https');
-const RENDER_URL = 'https://honey-pot-bot-nrd3.onrender.com';
-
-setInterval(() => {
-    https.get(RENDER_URL, (res) => {
-        logEvent('SYSTEM_KEEPALIVE', null, `-> Pinged self to prevent sleep. Status: ${res.statusCode}`);
-    }).on('error', (err) => {
-        logEvent('SYSTEM_KEEPALIVE_ERROR', null, `-> Failed to ping: ${err.message}`);
-    });
-}, 14 * 60 * 1000); 
-
 // --- Register Slash Commands ---
-client.once('ready', async () => {
+client.once('clientReady', async () => {
     logEvent('SYSTEM_START', null, `Logged in as ${client.user.tag}`);
     
     try {
@@ -384,15 +414,4 @@ client.once('ready', async () => {
     }
 });
 
-// --- SAFELY ATTEMPT LOGIN & CATCH ERRORS ---
-console.log("Attempting to connect to Discord...");
-
-if (!process.env.DISCORD_TOKEN) {
-    console.error("❌ CRITICAL ERROR: The DISCORD_TOKEN environment variable is completely missing or empty!");
-}
-
-client.login(process.env.DISCORD_TOKEN)
-    .then(() => console.log("Login request successfully sent to Discord network."))
-    .catch(error => {
-        console.error("❌ CRITICAL LOGIN ERROR:", error.message);
-    });
+client.login(process.env.DISCORD_TOKEN);
