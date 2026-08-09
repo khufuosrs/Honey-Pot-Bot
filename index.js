@@ -349,7 +349,7 @@ setInterval(() => {
 }, 14 * 60 * 1000); 
 
 // --- Register Slash Commands ---
-client.once('clientReady', async () => {
+client.once('ready', async () => {
     logEvent('SYSTEM_START', null, `Logged in as ${client.user.tag}`);
     
     try {
