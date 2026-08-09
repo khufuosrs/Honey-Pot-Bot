@@ -373,4 +373,15 @@ client.once('ready', async () => {
     }
 });
 
-client.login(process.env.DISCORD_TOKEN);
+// --- SAFELY ATTEMPT LOGIN & CATCH ERRORS ---
+console.log("Attempting to connect to Discord...");
+
+if (!process.env.DISCORD_TOKEN) {
+    console.error("❌ CRITICAL ERROR: The DISCORD_TOKEN environment variable is completely missing or empty!");
+}
+
+client.login(process.env.DISCORD_TOKEN)
+    .then(() => console.log("Login request successfully sent to Discord network."))
+    .catch(error => {
+        console.error("❌ CRITICAL LOGIN ERROR:", error.message);
+    });
